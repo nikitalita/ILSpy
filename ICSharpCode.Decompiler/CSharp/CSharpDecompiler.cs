@@ -280,6 +280,11 @@ namespace ICSharpCode.Decompiler.CSharp
 				return false;
 			var metadata = module.Metadata;
 			string name;
+			// TODO: monkey patch settings to contain a reference to the entity
+			// if (GodotChecks.IsBannedGodotTypeMember(member))
+			// {
+			// 	return true;
+			// }
 			switch (member.Kind)
 			{
 				case HandleKind.MethodDefinition:
@@ -1036,6 +1041,12 @@ namespace ICSharpCode.Decompiler.CSharp
 					case HandleKind.TypeDefinition:
 						ITypeDefinition typeDef = module.GetDefinition((TypeDefinitionHandle)entity);
 						syntaxTree.Members.Add(DoDecompile(typeDef, decompileRun, new SimpleTypeResolveContext(typeDef)));
+						if (GodotStuff.IsGodotPartialClass(typeDef) &&
+						    syntaxTree.Members.Last() is EntityDeclaration lastEntity)
+						{
+							lastEntity.Modifiers |= Modifiers.Partial;
+						}
+
 						if (first)
 						{
 							parentTypeDef = typeDef.DeclaringTypeDefinition;
@@ -1304,6 +1315,11 @@ namespace ICSharpCode.Decompiler.CSharp
 					// Fix empty parameter names in delegate declarations
 					FixParameterNames(delegateDeclaration);
 				}
+
+				if (GodotStuff.IsGodotPartialClass(typeDef))
+				{
+					entityDecl.Modifiers |= Modifiers.Partial;
+				}
 				var typeDecl = entityDecl as TypeDeclaration;
 				if (typeDecl == null)
 				{
@@ -1488,6 +1504,10 @@ namespace ICSharpCode.Decompiler.CSharp
 					return;
 				}
 
+				if (GodotStuff.IsBannedGodotTypeMember(entity))
+				{
+					return;
+				}
 				EntityDeclaration entityDecl;
 				switch (entity)
 				{

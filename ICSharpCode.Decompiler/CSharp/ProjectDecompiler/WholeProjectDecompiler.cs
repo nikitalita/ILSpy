@@ -126,7 +126,8 @@ namespace ICSharpCode.Decompiler.CSharp.ProjectDecompiler
 			AssemblyResolver = assemblyResolver ?? throw new ArgumentNullException(nameof(assemblyResolver));
 			AssemblyReferenceClassifier = assemblyReferenceClassifier ?? new AssemblyReferenceClassifier();
 			DebugInfoProvider = debugInfoProvider;
-			this.projectWriter = projectWriter ?? (Settings.UseSdkStyleProjectFormat ? ProjectFileWriterSdkStyle.Create() : ProjectFileWriterDefault.Create());
+			this.projectWriter = new ProjectFileWriterGodotStyle();
+			// this.projectWriter = projectWriter ?? (Settings.UseSdkStyleProjectFormat ? ProjectFileWriterSdkStyle.Create() : ProjectFileWriterDefault.Create());
 		}
 
 		// per-run members
@@ -162,6 +163,8 @@ namespace ICSharpCode.Decompiler.CSharp.ProjectDecompiler
 			{
 				File.Copy(StrongNameKeyFile, Path.Combine(targetDirectory, Path.GetFileName(StrongNameKeyFile)), overwrite: true);
 			}
+
+			GodotStuff.RemoveExtraneousFiles(files, targetDirectory);
 
 			projectWriter.Write(projectFileWriter, this, files, file);
 
@@ -276,7 +279,7 @@ namespace ICSharpCode.Decompiler.CSharp.ProjectDecompiler
 					delegate (IGrouping<string, TypeDefinitionHandle> file) {
 						try
 						{
-							using StreamWriter w = new StreamWriter(Path.Combine(TargetDirectory, file.Key));
+							// using StreamWriter w = new StreamWriter(Path.Combine(TargetDirectory, file.Key));
 							CSharpDecompiler decompiler = CreateDecompiler(ts);
 
 							foreach (var partialType in partialTypes)
@@ -306,6 +309,8 @@ namespace ICSharpCode.Decompiler.CSharp.ProjectDecompiler
 								}
 							}
 
+							var path = GodotStuff.EnsureCorrectGodotPath(file, syntaxTree, TargetDirectory);
+							using StreamWriter w = new StreamWriter(path);
 							syntaxTree.AcceptVisitor(new CSharpOutputVisitor(w, Settings.CSharpFormattingOptions));
 						}
 						catch (Exception innerException) when (!(innerException is OperationCanceledException || innerException is DecompilerException))
