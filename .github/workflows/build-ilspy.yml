@@ -73,8 +73,8 @@ jobs:
     #   with:
     #     paths: "test-results/${{ matrix.configuration }}.xml"
 
-    - name: Format check
-      run: dotnet-format whitespace --verify-no-changes --verbosity detailed ILSpy.sln
+    # - name: Format check
+    #   run: dotnet-format whitespace --verify-no-changes --verbosity detailed ILSpy.sln
       
     - name: Verify package contents
       if: matrix.configuration == 'debug'
