@@ -122,6 +122,10 @@ Examples:
 		[Option("--disable-updatecheck", "If using ilspycmd in a tight loop or fully automated scenario, you might want to disable the automatic update check.", CommandOptionType.NoValue)]
 		public bool DisableUpdateCheck { get; }
 
+		[Option("--godot", "Decompile a Godot game assembly.", CommandOptionType.NoValue)]
+		public bool GodotFlag { get; }
+		
+		
 		#region MermaidDiagrammer options
 
 		// reused or quoted commands
@@ -186,7 +190,7 @@ Examples:
 
 			try
 			{
-				if (CreateCompilableProjectFlag)
+				if (CreateCompilableProjectFlag || GodotFlag)
 				{
 					if (InputAssemblyNames.Length == 1)
 					{
@@ -331,6 +335,7 @@ Examples:
 				RemoveDeadStores = RemoveDeadStores,
 				UseSdkStyleProjectFormat = WholeProjectDecompiler.CanUseSdkStyleProjectFormat(module),
 				UseNestedDirectoriesForNamespaces = NestedDirectories,
+				GodotMode = GodotFlag
 			};
 		}
 
