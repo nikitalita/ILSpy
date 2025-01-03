@@ -174,7 +174,7 @@ public static class GodotStuff
 		if (entity is IField field)
 		{
 			return field.Name.StartsWith(BACKING_FIELD_PREFIX) &&
-			       GetSignalsInClass(field.DeclaringTypeDefinition).Contains(field.Type);
+			       GetSignalsInClass(field.DeclaringTypeDefinition).Contains(field.Type.GetDefinition());
 		}
 
 		return false;
@@ -218,7 +218,7 @@ public static class GodotStuff
 
 				break;
 			case IEvent @event:
-				if (GetSignalsInClass(@event.DeclaringTypeDefinition).Contains(@event.ReturnType) &&
+				if (GetSignalsInClass(@event.DeclaringTypeDefinition).Contains(@event.ReturnType.GetDefinition()) &&
 				    GetBackingSignalDelegateFieldNames(@event.DeclaringTypeDefinition)
 					    .Contains(BACKING_FIELD_PREFIX + @event.Name))
 				{
