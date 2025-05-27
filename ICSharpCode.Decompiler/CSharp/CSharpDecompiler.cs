@@ -282,7 +282,7 @@ namespace ICSharpCode.Decompiler.CSharp
 			var metadata = module.Metadata;
 			string name;
 			// TODO: monkey patch settings to contain a reference to the entity
-			// if (GodotChecks.IsBannedGodotTypeMember(member))
+			// if (settings.GodotMode && GodotChecks.IsBannedGodotTypeMember(member))
 			// {
 			// 	return true;
 			// }
@@ -1044,10 +1044,13 @@ namespace ICSharpCode.Decompiler.CSharp
 					case HandleKind.TypeDefinition:
 						ITypeDefinition typeDef = module.GetDefinition((TypeDefinitionHandle)entity);
 						syntaxTree.Members.Add(DoDecompile(typeDef, decompileRun, new SimpleTypeResolveContext(typeDef)));
-						if (GodotStuff.IsGodotPartialClass(typeDef) &&
-						    syntaxTree.Members.Last() is EntityDeclaration lastEntity)
+						if (settings.GodotMode)
 						{
-							lastEntity.Modifiers |= Modifiers.Partial;
+							if (GodotStuff.IsGodotPartialClass(typeDef) &&
+							    syntaxTree.Members.Last() is EntityDeclaration lastEntity)
+							{
+								lastEntity.Modifiers |= Modifiers.Partial;
+							}
 						}
 
 						if (first)
@@ -1318,7 +1321,7 @@ namespace ICSharpCode.Decompiler.CSharp
 					FixParameterNames(delegateDeclaration);
 				}
 
-				if (GodotStuff.IsGodotPartialClass(typeDef))
+				if (settings.GodotMode && GodotStuff.IsGodotPartialClass(typeDef))
 				{
 					entityDecl.Modifiers |= Modifiers.Partial;
 				}
@@ -1506,7 +1509,7 @@ namespace ICSharpCode.Decompiler.CSharp
 					return;
 				}
 
-				if (GodotStuff.IsBannedGodotTypeMember(entity))
+				if (settings.GodotMode && GodotStuff.IsBannedGodotTypeMember(entity))
 				{
 					return;
 				}

@@ -2185,6 +2185,25 @@ namespace ICSharpCode.Decompiler
 			}
 		}
 
+		bool godotMode = false;
+
+		/// <summary>
+		/// Godot mode.
+		/// </summary>
+		[Category("DecompilerSettings.Other")]
+		[Description("DecompilerSettings.GodotMode")]
+		public bool GodotMode {
+			get { return godotMode; }
+			set {
+				if (godotMode != value)
+				{
+					godotMode = value;
+					OnPropertyChanged();
+				}
+			}
+		}
+		
+
 		CSharpFormattingOptions csharpFormattingOptions;
 
 		[Browsable(false)]
