@@ -26,6 +26,9 @@ using System.Xml;
 using ICSharpCode.Decompiler.Metadata;
 using ICSharpCode.Decompiler.Util;
 
+using LightJson;
+using LightJson.Serialization;
+
 namespace ICSharpCode.Decompiler.CSharp.ProjectDecompiler
 {
 	/// <summary>
@@ -56,11 +59,19 @@ namespace ICSharpCode.Decompiler.CSharp.ProjectDecompiler
 
 		enum ProjectType { Default, WinForms, Wpf, Web }
 
+		readonly bool writePackageReferences = true;
+
+		public ProjectFileWriterGodotStyle(bool writePackageReferences)
+		{
+			this.writePackageReferences = writePackageReferences;
+		}
+
 		/// <summary>
 		/// Creates a new instance of the <see cref="ProjectFileWriterSdkStyle"/> class.
 		/// </summary>
 		/// <returns>A new instance of the <see cref="ProjectFileWriterSdkStyle"/> class.</returns>
-		public static IProjectFileWriter Create() => new ProjectFileWriterSdkStyle();
+		public static IProjectFileWriter Create(bool writeNugetRefs = true) =>
+			new ProjectFileWriterGodotStyle(writeNugetRefs);
 
 		/// <inheritdoc />
 		public void Write(
@@ -72,25 +83,309 @@ namespace ICSharpCode.Decompiler.CSharp.ProjectDecompiler
 			using (XmlTextWriter xmlWriter = new XmlTextWriter(target))
 			{
 				xmlWriter.Formatting = Formatting.Indented;
-				Write(xmlWriter, project, files, module);
+				Write(xmlWriter, project, files, module, this.writePackageReferences);
 			}
 		}
 
 		static void Write(XmlTextWriter xml, IProjectInfoProvider project, IEnumerable<ProjectItemInfo> files,
-			MetadataFile module)
+			MetadataFile module, bool writePackageReferences)
 		{
 			xml.WriteStartElement("Project");
-
+			var deps = LoadDeps(module);
 			var projectType = GetProjectType(module);
-			xml.WriteAttributeString("Sdk", GetSdkString(projectType));
+			var godotVersion = GetGodotVersion(deps);
+			var sdkString = GetSdkString(projectType);
+			if (godotVersion != "")
+			{
+				sdkString = sdkString + "/" + godotVersion;
+			}
+
+			xml.WriteAttributeString("Sdk", sdkString);
 
 			PlaceIntoTag("PropertyGroup", xml, () => WriteAssemblyInfo(xml, module, project, projectType));
 			PlaceIntoTag("PropertyGroup", xml, () => WriteProjectInfo(xml, project));
 			PlaceIntoTag("PropertyGroup", xml, () => WriteMiscellaneousPropertyGroup(xml, files));
 			PlaceIntoTag("ItemGroup", xml, () => WriteResources(xml, files));
-			PlaceIntoTag("ItemGroup", xml, () => WriteReferences(xml, module, project, projectType));
+			PlaceIntoTag("ItemGroup", xml,
+				() => WritePackageReferences(xml, module, project, projectType, deps, writePackageReferences));
+
+			PlaceIntoTag("ItemGroup", xml,
+				() => WriteReferences(xml, module, project, projectType, deps, writePackageReferences));
 
 			xml.WriteEndElement();
+		}
+
+		class DotNetCoreDepInfo
+		{
+			public readonly string Name;
+			public readonly string Version;
+			public readonly string Type;
+			public readonly string Path;
+			public readonly string Sha512;
+			public readonly bool Serviceable;
+			public readonly DotNetCoreDepInfo[] deps;
+			public readonly string[] runtimeComponents;
+
+			public DotNetCoreDepInfo(string fullName, string version, string type, bool serviceable, string path,
+				string sha512,
+				DotNetCoreDepInfo[] deps, string[] runtimeComponents)
+			{
+				var parts = fullName.Split('/');
+				this.Name = parts[0];
+				if (parts.Length > 1)
+				{
+					this.Version = parts[1];
+				}
+				else
+				{
+					this.Version = version;
+				}
+
+				this.Type = type;
+				this.Serviceable = serviceable;
+				this.Path = path;
+				this.Sha512 = sha512;
+
+				this.deps = deps;
+				this.runtimeComponents = runtimeComponents;
+			}
+
+			static public DotNetCoreDepInfo Create(string fullName, string version, string target, JsonObject blob)
+			{
+				return Create(fullName, version, target, blob, new HashSet<string>());
+			}
+
+			static DotNetCoreDepInfo Create(string fullName, string version, string target, JsonObject blob,
+				HashSet<string> _deps)
+			{
+				var parts = fullName.Split('/');
+				var Name = parts[0];
+				var Version = "<UNKNOWN>";
+				if (parts.Length > 1)
+				{
+					Version = parts[1];
+				}
+				else
+				{
+					Version = version;
+				}
+
+				var type = "runtimedll";
+				var serviceable = false;
+				var path = "";
+				var sha512 = "";
+				var libraryBlob = blob["libraries"][Name + "/" + Version].AsJsonObject;
+				if (libraryBlob != null)
+				{
+					type = libraryBlob["type"].AsString;
+					serviceable = libraryBlob["serviceable"].AsBoolean;
+					path = libraryBlob["path"].AsString ?? "";
+					sha512 = libraryBlob["sha512"].AsString ?? "";
+				}
+
+				string[] runtimeComponents = Array.Empty<string>();
+				var runtimeBlob = blob["targets"][target].AsJsonObject?[Name + "/" + Version].AsJsonObject?["runtime"]
+					.AsJsonObject;
+				if (runtimeBlob != null)
+				{
+					runtimeComponents = new string[runtimeBlob.Count];
+					int i = 0;
+					foreach (var component in runtimeBlob)
+					{
+						runtimeComponents[i] = System.IO.Path.GetFileNameWithoutExtension(component.Key);
+						i++;
+					}
+				}
+
+				var deps = getDeps(Name, Version, target, blob, _deps);
+				return new DotNetCoreDepInfo(Name, Version, type, serviceable, path, sha512, deps, runtimeComponents);
+			}
+			
+
+			static DotNetCoreDepInfo[] getDeps(string Name, string Version, string target, JsonObject blob,
+				HashSet<string> _deps = null)
+			{
+				if (_deps == null)
+				{
+					_deps = new HashSet<string>();
+				}
+
+				var targetBlob = blob["targets"][target].AsJsonObject;
+				if (targetBlob == null)
+				{
+					return Empty<DotNetCoreDepInfo>.Array;
+				}
+
+				var depsBlob = targetBlob[Name + "/" + Version].AsJsonObject?["dependencies"].AsJsonObject;
+				var runtimeBlob = targetBlob[Name + "/" + Version].AsJsonObject?["runtime"].AsJsonObject;
+				if (depsBlob == null && runtimeBlob == null)
+				{
+					return Empty<DotNetCoreDepInfo>.Array;
+				}
+
+				List<DotNetCoreDepInfo> result = new List<DotNetCoreDepInfo>();
+				Dictionary<String, String> deps = new Dictionary<string, string>();
+				if (depsBlob != null)
+				{
+					foreach (var dep in depsBlob)
+					{
+						if (!_deps.Add(dep.Key + "/" + dep.Value.AsString))
+						{
+							continue;
+						}
+
+						deps.Add(dep.Key, dep.Value.AsString);
+					}
+				}
+				
+				for (int i = 0; i < deps.Count; i++)
+				{
+					var dep = deps.ElementAt(i);
+					var new_dep = Create(dep.Key, dep.Value, target, blob, _deps);
+					result.Add(new_dep);
+				}
+
+				return result.ToArray();
+			}
+
+			public bool HasDep(string name, bool parentIsPackage)
+			{
+				if (this.runtimeComponents.Contains(name))
+				{
+					return true;
+				}
+				for (int i = 0; i < deps.Length; i++)
+				{
+					if (parentIsPackage && (deps[i].Type != "package"))
+					{
+						continue;
+					}
+					
+					if (deps[i].Name == name)
+					{
+						return true;
+					}
+
+					if (deps[i].HasDep(name, false))
+					{
+						return true;
+					}
+				}
+
+				return false;
+			}
+
+			public string PathName { get => System.IO.Path.Combine(Name, Version); }
+		}
+
+		class DotNetCorePackageInfo
+		{
+			public readonly string Name;
+			public readonly string Version;
+			public readonly string Type;
+			public readonly string Path;
+			public readonly string[] RuntimeComponents;
+
+			public DotNetCorePackageInfo(string fullName, string type, string path, string[] runtimeComponents)
+			{
+				var parts = fullName.Split('/');
+				this.Name = parts[0];
+				if (parts.Length > 1)
+				{
+					this.Version = parts[1];
+				}
+				else
+				{
+					this.Version = "<UNKNOWN>";
+				}
+
+				this.Type = type;
+				this.Path = path;
+				this.RuntimeComponents = runtimeComponents ?? Empty<string>.Array;
+			}
+		}
+
+		static IEnumerable<DotNetCorePackageInfo> LoadPackageInfos(string depsJsonFileName, string targetFramework)
+		{
+			var dependencies = JsonReader.Parse(File.ReadAllText(depsJsonFileName));
+			var runtimeInfos = dependencies["targets"][targetFramework].AsJsonObject;
+			var libraries = dependencies["libraries"].AsJsonObject;
+			if (runtimeInfos == null || libraries == null)
+				yield break;
+			foreach (var library in libraries)
+			{
+				var type = library.Value["type"].AsString;
+				var path = library.Value["path"].AsString;
+				var runtimeInfo = runtimeInfos[library.Key].AsJsonObject?["runtime"].AsJsonObject;
+				string[] components = new string[runtimeInfo?.Count ?? 0];
+				if (runtimeInfo != null)
+				{
+					int i = 0;
+					foreach (var component in runtimeInfo)
+					{
+						components[i] = component.Key;
+						i++;
+					}
+				}
+
+				yield return new DotNetCorePackageInfo(library.Key, type, path, components);
+			}
+		}
+
+		static DotNetCoreDepInfo LoadDeps(MetadataFile module)
+		{
+			// remove the .dll extension
+			var depsJsonFileName = module.FileName.Substring(0, module.FileName.Length - 4) + ".deps.json";
+			var dependencies = JsonReader.Parse(File.ReadAllText(depsJsonFileName));
+			// go through each target framework, find the one that matches the module
+			Dictionary<String, JsonValue> targetBlob = new Dictionary<string, JsonValue>();
+			foreach (var target in dependencies["targets"].AsJsonObject)
+			{
+				foreach (var dependency in target.Value.AsJsonObject)
+				{
+					if (dependency.Key.StartsWith(module.Name))
+					{
+						return DotNetCoreDepInfo.Create(dependency.Key, "", target.Key, dependencies.AsJsonObject);
+					}
+				}
+			}
+
+			return null;
+		}
+
+		static void WritePackageReferences(XmlTextWriter xml, MetadataFile module, IProjectInfoProvider project,
+			ProjectType projectType, DotNetCoreDepInfo deps, bool writePackageReferences)
+		{
+			void WritePackageRefs(XmlTextWriter xml)
+			{
+				foreach (var dep in deps.deps)
+				{
+					if (dep.Name == "GodotSharp" || dep.Name == "Godot.SourceGenerators" ||
+					    dep.Name.StartsWith("runtimepack") || dep.Serviceable == false || dep.Type != "package")
+					{
+						continue;
+					}
+
+					xml.WriteStartElement("PackageReference");
+					xml.WriteAttributeString("Include", dep.Name);
+					xml.WriteAttributeString("Version", dep.Version);
+					xml.WriteEndElement();
+				}
+			}
+
+			if (deps.deps.Length == 0)
+			{
+				return;
+			}
+
+			if (writePackageReferences)
+			{
+				WritePackageRefs(xml);
+			}
+			else
+			{
+				writeBlockComment(xml, WritePackageRefs, "Uncomment these to download the nuget packages.");
+			}
 		}
 
 		static void PlaceIntoTag(string tagName, XmlTextWriter xml, Action content)
@@ -119,8 +414,11 @@ namespace ICSharpCode.Decompiler.CSharp.ProjectDecompiler
 			xml.WriteElementString("AssemblyName", module.Name);
 
 			// Since we create AssemblyInfo.cs manually, we need to disable the auto-generation
-			xml.WriteElementString("GenerateAssemblyInfo", FalseString);
-
+			// Actually, we don't.
+			// xml.WriteElementString("GenerateAssemblyInfo", FalseString);
+			xml.WriteElementString("EnableDynamicLoading", TrueString);
+			
+			
 			string platformName;
 			CorFlags flags;
 			if (module is PEFile { Reader.PEHeaders: var headers } peFile)
@@ -257,8 +555,32 @@ namespace ICSharpCode.Decompiler.CSharp.ProjectDecompiler
 			}
 		}
 
+		// takes in a void function and returns a string
+		static void writeBlockComment(XmlTextWriter oldXml, Action<XmlTextWriter> write, string prefixComment = null)
+		{
+			var writer = new StringWriter();
+			var xml = new XmlTextWriter(writer);
+			xml.Indentation = oldXml.Indentation;
+			xml.IndentChar = oldXml.IndentChar;
+			xml.Formatting = oldXml.Formatting;
+			xml.QuoteChar = oldXml.QuoteChar;
+			write(xml);
+			xml.Flush();
+			var text = writer.ToString();
+			if (text?.Length > 0)
+			{
+				if (prefixComment != null)
+				{
+					oldXml.WriteComment(prefixComment);
+				}
+
+				oldXml.WriteComment("\n" + text + "\n");
+			}
+		}
+
+
 		static void WriteReferences(XmlTextWriter xml, MetadataFile module, IProjectInfoProvider project,
-			ProjectType projectType)
+			ProjectType projectType, DotNetCoreDepInfo deps, bool writePackageReferences = false)
 		{
 			bool isNetCoreApp = TargetServices.DetectTargetFramework(module).Identifier == ".NETCoreApp";
 			var targetPacks = new HashSet<string>();
@@ -278,6 +600,10 @@ namespace ICSharpCode.Decompiler.CSharp.ProjectDecompiler
 				}
 			}
 
+			List<AssemblyReference> godotSharpRefs = new List<AssemblyReference>();
+
+			List<AssemblyReference> commentedReferences = new List<AssemblyReference>();
+
 			foreach (var reference in module.AssemblyReferences.Where(r => !ImplicitReferences.Contains(r.Name)))
 			{
 				if (isNetCoreApp &&
@@ -287,38 +613,71 @@ namespace ICSharpCode.Decompiler.CSharp.ProjectDecompiler
 					continue;
 				}
 
-				if (reference.Name == "GodotSharp")
+				if (reference.Name is "GodotSharp" or "Godot.SourceGenerators" or "GodotSharpEditor")
 				{
+					godotSharpRefs.Add(reference);
 					continue;
 				}
 
-				xml.WriteStartElement("Reference");
-				xml.WriteAttributeString("Include", reference.Name);
+				if (writePackageReferences && deps.HasDep(reference.Name, true))
+				{
+					commentedReferences.Add(reference);
+					continue;
+				}
+
+				WriteRef(xml, reference);
+			}
+
+			writeBlockComment(xml, (newXml) => {
+					foreach (var reference in godotSharpRefs)
+					{
+						WriteRef(newXml, reference);
+					}
+				},
+				"The following references were not added to the project file because they are automatically added by the Godot SDK.");
+
+			writeBlockComment(xml, (newXml) => {
+					foreach (var reference in commentedReferences)
+					{
+						WriteRef(newXml, reference);
+					}
+				},
+				"The following references were not added to the project file because they are part of the package references above.");
+
+			return;
+
+			void WriteRef(XmlTextWriter newXml, AssemblyReference reference)
+			{
+				newXml.WriteStartElement("Reference");
+				newXml.WriteAttributeString("Include", reference.Name);
 
 				var asembly = project.AssemblyResolver.Resolve(reference);
 				if (asembly != null && !project.AssemblyReferenceClassifier.IsGacAssembly(reference))
 				{
-					xml.WriteElementString("HintPath",
+					newXml.WriteElementString("HintPath",
 						FileUtility.GetRelativePath(project.TargetDirectory, asembly.FileName));
 				}
 
-				xml.WriteEndElement();
+				newXml.WriteEndElement();
 			}
+		}
+
+		static string GetGodotVersion(DotNetCoreDepInfo deps)
+		{
+			foreach (var reference in deps.deps)
+			{
+				if (reference.Name == "GodotSharp")
+				{
+					return reference.Version;
+				}
+			}
+
+			return "";
 		}
 
 		static string GetSdkString(ProjectType projectType)
 		{
-			// switch (projectType)
-			// {
-			// 	case ProjectType.WinForms:
-			// 	case ProjectType.Wpf:
-			// 		return "Microsoft.NET.Sdk.WindowsDesktop";
-			// 	case ProjectType.Web:
-			// 		return "Microsoft.NET.Sdk.Web";
-			// 	default:
-			// 		return "Microsoft.NET.Sdk";
-			// }
-			return "THIS.IS.A.BOGUS.STRING.TO.FORCE.GODOT.TO.REWRITE.THE.PROJECT.FILE";
+			return "Godot.NET.Sdk";
 		}
 
 		static ProjectType GetProjectType(MetadataFile module)
