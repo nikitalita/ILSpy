@@ -2202,6 +2202,28 @@ namespace ICSharpCode.Decompiler
 				}
 			}
 		}
+
+		string godotProjectDirectory = null;
+
+		/// <summary>
+		/// Original Godot project directory.
+		/// Defaults to the target directory if not set.
+		/// </summary>
+		[Category("DecompilerSettings.Other")]
+		[Description("DecompilerSettings.GodotProjectDirectory")]
+		public string GodotProjectDirectory {
+			get {
+				return godotProjectDirectory;
+			}
+			set {
+				if (godotProjectDirectory != value)
+				{
+					godotProjectDirectory = value;
+					OnPropertyChanged();
+				}
+			}
+		}
+		
 		
 
 		CSharpFormattingOptions csharpFormattingOptions;

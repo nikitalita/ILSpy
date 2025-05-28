@@ -129,6 +129,7 @@ namespace ICSharpCode.Decompiler.CSharp.ProjectDecompiler
 			DebugInfoProvider = debugInfoProvider;
 			if (Settings.GodotMode)
 			{
+				Settings.UseNestedDirectoriesForNamespaces = true;
 				this.projectWriter = ProjectFileWriterGodotStyle.Create();
 			}
 			else
@@ -291,6 +292,17 @@ namespace ICSharpCode.Decompiler.CSharp.ProjectDecompiler
 
 			void ProcessFiles(List<IGrouping<string, TypeDefinitionHandle>> files)
 			{
+				var toProcess = new ConcurrentDictionary<IGrouping<string, TypeDefinitionHandle>, SyntaxTree>();
+				if (Settings.GodotProjectDirectory == null)
+				{
+					Settings.GodotProjectDirectory = TargetDirectory;
+				}
+
+				var filesInOriginal =
+					GodotStuff.ListCSharpFiles(Settings.GodotProjectDirectory, false);
+
+				var processed = new ConcurrentDictionary<string, SyntaxTree>();
+
 				processedTypes.AddRange(files.SelectMany(f => f));
 				Parallel.ForEach(
 					Partitioner.Create(files, loadBalance: true),
@@ -334,7 +346,16 @@ namespace ICSharpCode.Decompiler.CSharp.ProjectDecompiler
 							var path = Path.Combine(TargetDirectory, file.Key);
 							if (Settings.GodotMode)
 							{
-								path = GodotStuff.EnsureCorrectGodotPath(file, syntaxTree, TargetDirectory);
+								var scriptPath = GodotStuff.FindScriptPathInChildren(syntaxTree.Children);
+								if (scriptPath == "")
+								{
+									toProcess.TryAdd(file, syntaxTree);
+									return;
+								}
+
+								processed.TryAdd(scriptPath, syntaxTree);
+								path = Path.Combine(TargetDirectory, scriptPath);
+								GodotStuff.EnsureDir(Path.GetDirectoryName(path));
 							}
 							using StreamWriter w = new StreamWriter(path);
 							syntaxTree.AcceptVisitor(new CSharpOutputVisitor(w, Settings.CSharpFormattingOptions));
@@ -347,6 +368,13 @@ namespace ICSharpCode.Decompiler.CSharp.ProjectDecompiler
 						Interlocked.Increment(ref progress.UnitsCompleted);
 						progressReporter?.Report(progress);
 					});
+
+				if (Settings.GodotMode)
+				{
+					GodotStuff.ProcessUnprocessedFiles(toProcess,
+						TargetDirectory, filesInOriginal,
+						this.MaxDegreeOfParallelism, cancellationToken, Settings, processed);
+				}
 			}
 		}
 		#endregion

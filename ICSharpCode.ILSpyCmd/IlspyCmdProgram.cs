@@ -124,6 +124,11 @@ Examples:
 
 		[Option("--godot", "Decompile a Godot game assembly.", CommandOptionType.NoValue)]
 		public bool GodotFlag { get; }
+
+		[Option("--godot-project-dir",
+			"The extracted Godot project directory. Defaults to the output directory if not set.",
+			CommandOptionType.SingleValue)]
+		public string GodotProjectDirectorySetting { get; } = null;
 		
 		
 		#region MermaidDiagrammer options
@@ -335,7 +340,8 @@ Examples:
 				RemoveDeadStores = RemoveDeadStores,
 				UseSdkStyleProjectFormat = WholeProjectDecompiler.CanUseSdkStyleProjectFormat(module),
 				UseNestedDirectoriesForNamespaces = NestedDirectories,
-				GodotMode = GodotFlag
+				GodotMode = GodotFlag,
+				GodotProjectDirectory = GodotProjectDirectorySetting
 			};
 		}
 
