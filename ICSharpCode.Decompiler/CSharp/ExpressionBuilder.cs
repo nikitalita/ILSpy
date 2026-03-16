@@ -4115,6 +4115,8 @@ namespace ICSharpCode.Decompiler.CSharp
 				resultType = compilation.FindType(inst.ResultType);
 			}
 
+			var castNeeded = inst.Sections.Count > 1;
+
 			foreach (var section in inst.Sections)
 			{
 				if (section == defaultSection)
@@ -4132,6 +4134,7 @@ namespace ICSharpCode.Decompiler.CSharp
 					ses.Pattern = astBuilder.ConvertConstantValue(rr);
 				}
 				ses.Body = TranslateSectionBody(section);
+				castNeeded = castNeeded && ses.Body is not CastExpression;
 				switchExpr.SwitchSections.Add(ses);
 			}
 
@@ -4140,7 +4143,16 @@ namespace ICSharpCode.Decompiler.CSharp
 			defaultSES.Body = TranslateSectionBody(defaultSection);
 			switchExpr.SwitchSections.Add(defaultSES);
 
-			return switchExpr.WithILInstruction(inst).WithRR(new ResolveResult(resultType));
+			var resolved = new ResolveResult(resultType);
+
+			if (castNeeded && !resolved.IsError) {
+				var first = switchExpr.SwitchSections.FirstOrDefault()!;
+				var body = first.Body;
+				first.Body = null;
+				first.Body = new CastExpression(ConvertType(resultType), body);
+			}
+
+			return switchExpr.WithILInstruction(inst).WithRR(resolved);
 
 			Expression TranslateSectionBody(IL.SwitchSection section)
 			{
