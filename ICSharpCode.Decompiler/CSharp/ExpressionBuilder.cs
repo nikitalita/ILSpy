@@ -4144,8 +4144,8 @@ namespace ICSharpCode.Decompiler.CSharp
 
 			if (!resolved.IsError && switchExpr.SwitchSections.Count > 1)
 			{
-				if (!switchExpr.SwitchSections.Any(s => s.Body is CastExpression) && switchExpr.SwitchSections.Count(s => s.Body is not PrimitiveExpression) > 1){
-					var first = switchExpr.SwitchSections.FirstOrDefault(s => s.Body is not PrimitiveExpression);
+				if (!switchExpr.SwitchSections.Any(s => s.Body is CastExpression) && switchExpr.SwitchSections.Count(s => s.Body is not PrimitiveExpression && s.Body is not NullReferenceExpression) > 1){
+					var first = switchExpr.SwitchSections.FirstOrDefault(s => s.Body is not PrimitiveExpression && s.Body is not NullReferenceExpression);
 					var body = first.Body;
 					first.Body = null;
 					first.Body = new CastExpression(ConvertType(resultType), body);
