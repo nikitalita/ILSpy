@@ -680,10 +680,12 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 					{
 						throw new InvalidOperationException();
 					}
+					section.OriginalInstructionCount = 1;
 				}
 				else
 				{
 					section.Body = ((StLoc)block.Instructions[0]).Value;
+					section.OriginalInstructionCount = block.Instructions.Count;
 				}
 			}
 			if (resultVariable != null)

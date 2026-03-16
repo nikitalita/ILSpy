@@ -4115,6 +4115,8 @@ namespace ICSharpCode.Decompiler.CSharp
 				resultType = compilation.FindType(inst.ResultType);
 			}
 
+			var sectionsWithTwoInstructions = new List<SwitchExpressionSection>();
+
 			foreach (var section in inst.Sections)
 			{
 				if (section == defaultSection)
@@ -4132,6 +4134,10 @@ namespace ICSharpCode.Decompiler.CSharp
 					ses.Pattern = astBuilder.ConvertConstantValue(rr);
 				}
 				ses.Body = TranslateSectionBody(section);
+				if (section.OriginalInstructionCount == 2)
+				{
+					sectionsWithTwoInstructions.Add(ses);
+				}
 				switchExpr.SwitchSections.Add(ses);
 			}
 
@@ -4144,11 +4150,13 @@ namespace ICSharpCode.Decompiler.CSharp
 
 			if (!resolved.IsError && switchExpr.SwitchSections.Count > 1)
 			{
-				if (!switchExpr.SwitchSections.Any(s => s.Body is CastExpression) && switchExpr.SwitchSections.Count(s => s.Body is not PrimitiveExpression && s.Body is not NullReferenceExpression) > 1){
-					var first = switchExpr.SwitchSections.FirstOrDefault(s => s.Body is not PrimitiveExpression && s.Body is not NullReferenceExpression);
-					var body = first.Body;
-					first.Body = null;
-					first.Body = new CastExpression(ConvertType(resultType), body);
+				if (!switchExpr.SwitchSections.Any(s => s.Body is CastExpression) && sectionsWithTwoInstructions.Count > 1){
+					var first = sectionsWithTwoInstructions.FirstOrDefault();
+					if (first != null) {
+						var body = first.Body;
+						first.Body = null;
+						first.Body = new CastExpression(ConvertType(resultType), body);
+					}
 				}
 			}
 

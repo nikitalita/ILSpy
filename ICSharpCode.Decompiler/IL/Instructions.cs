@@ -1571,6 +1571,9 @@ namespace ICSharpCode.Decompiler.IL
 				SetChildInstruction(ref this.body, value, 0);
 			}
 		}
+
+		public int OriginalInstructionCount { get; set; } = 0;
+
 		protected sealed override int GetChildCount()
 		{
 			return 1;
