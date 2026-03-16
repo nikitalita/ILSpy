@@ -37,6 +37,36 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 			Null
 		}
 
+		public enum AnimalType
+		{
+			Fish,
+			Dog
+		}
+
+		public abstract class Animal
+		{
+			public abstract string Name { get; }
+
+			public Animal ToValidated()
+			{
+				if (Name == null)
+				{
+					throw new ArgumentNullException("Name");
+				}
+				return this;
+			}
+		}
+
+		public class Dog : Animal
+		{
+			public override string Name => "Dog";
+		}
+
+		public class Fish : Animal
+		{
+			public override string Name => "Fish";
+		}
+
 		public static bool? SwitchOverNullableEnum(State? state)
 		{
 			return state switch {
@@ -160,40 +190,13 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 			};
 		}
 
-		public enum AnimalType
+		public static Animal TestSwitchWithRequiredExplicitCast(AnimalType animalType)
 		{
-			Fish,
-			Dog
-		}
-
-		public abstract class Animal
-		{
-			public abstract string Name { get;}
-
-			public Animal ToValidated() {
-				if (Name is null) {
-					throw new ArgumentNullException(nameof(Name));
-				}
-				return this;
-			}
-		}
-
-		public class Dog : Animal
-		{
-			public override string Name => "Dog";
-		}
-
-		public class Fish : Animal
-		{
-			public override string Name => "Fish";
-		}
-
-		public static Animal TestSwitchWithRequiredExplicitCast(AnimalType animalType){
 			return (animalType switch {
-					AnimalType.Dog => (Animal)new Dog(),
-					AnimalType.Fish => new Fish(),
-					_ => throw new ArgumentException("Invalid animal type")
-				}).ToValidated();
+				AnimalType.Dog => (Animal)new Dog(),
+				AnimalType.Fish => new Fish(),
+				_ => throw new ArgumentException("Invalid animal type"),
+			}).ToValidated();
 		}
 
 	}
