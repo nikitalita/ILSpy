@@ -159,5 +159,42 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 				_ => "default",
 			};
 		}
+
+		public enum AnimalType
+		{
+			Fish,
+			Dog
+		}
+
+		public abstract class Animal
+		{
+			public abstract string Name { get;}
+
+			public Animal ToValidated() {
+				if (Name is null) {
+					throw new ArgumentNullException(nameof(Name));
+				}
+				return this;
+			}
+		}
+
+		public class Dog : Animal
+		{
+			public override string Name => "Dog";
+		}
+
+		public class Fish : Animal
+		{
+			public override string Name => "Fish";
+		}
+
+		public static Animal TestSwitchWithRequiredExplicitCast(AnimalType animalType){
+			return (animalType switch {
+					AnimalType.Dog => (Animal)new Dog(),
+					AnimalType.Fish => new Fish(),
+					_ => throw new ArgumentException("Invalid animal type")
+				}).ToValidated();
+		}
+
 	}
 }
